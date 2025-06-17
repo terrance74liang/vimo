@@ -113,6 +113,12 @@ _N_TASK_COMBINATIONS = flags.DEFINE_integer(
     'Number of task instances to run for each task template.',
 )
 
+_VIMO_API = flags.DEFINE_string(
+    'vimo_api',
+    '',
+    'The ViMo API address.',
+)
+
 _CHECKPOINT_DIR = flags.DEFINE_string(
     'checkpoint_dir',
     '',
@@ -173,7 +179,7 @@ def _get_agent(
     )
   elif _AGENT_NAME.value == 't3a_vimo_gemini':
     agent = t3a.T3A(
-        env, infer.GeminiGcpWrapper(model_name='gemini-2.0-flash')
+        env, infer.GeminiGcpWrapper(model_name='gemini-2.0-flash'), _VIMO_API.value
     )
   # GPT.
   elif _AGENT_NAME.value == 't3a_gpt4':
