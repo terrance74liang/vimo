@@ -374,6 +374,7 @@ class T3A(base_agent.EnvironmentInteractingAgent):
       self,
       env: interface.AsyncEnv,
       llm: infer.LlmWrapper,
+      vimo_path: str,
       name: str = 'T3A',
   ):
     """Initializes a RandomAgent.
@@ -385,6 +386,7 @@ class T3A(base_agent.EnvironmentInteractingAgent):
     """
     super().__init__(env, name)
     self.llm = llm
+    self.vimo_api = vimo_path
     self.history = []
     self.additional_guidelines = None
 
@@ -460,9 +462,9 @@ Action: {{"action_type": "status", "goal_status": "infeasible"}}"""
       action_sums[act_key] = action_sum.strip('\n')
     with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
         futures = [
-            executor.submit(post_figure_action, step_data['raw_screenshot'], action_sums[1]),
-            executor.submit(post_figure_action, step_data['raw_screenshot'], action_sums[2]),
-            executor.submit(post_figure_action, step_data['raw_screenshot'], action_sums[3]),
+            executor.submit(post_figure_action, step_data['raw_screenshot'], action_sums[1], self.vimo_api),
+            executor.submit(post_figure_action, step_data['raw_screenshot'], action_sums[2], self.vimo_api),
+            executor.submit(post_figure_action, step_data['raw_screenshot'], action_sums[3], self.vimo_api),
         ]
     results = [future.result() for future in futures]
     
