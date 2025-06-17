@@ -33,9 +33,7 @@ python UI_text_prediction.py
    - [Android In The Wild](https://github.com/google-research/google-research/tree/master/android_in_the_wild)
 
 2. Organize the data as follows:
-Image/
-└── epid/
-└── image_id.png
+<pre> ```bash Image/ └── epid/ └── image_id.png ``` </pre>
 
 3. Run `generate_ocr.py` to detect OCR content in the GUI screenshots.
 
@@ -48,7 +46,7 @@ Please refer to the [IP2P project](https://github.com/timothybrooks/instruct-pix
 ## ✅ To-Do List
 
 - [x] Code for  UI text prediction
-- [x ] Release the STR dataset process code
+- [x] Release the STR dataset process code
 - [x] Release instruction for UI graphic prediction
 - [ ] Release code for agent 
 
