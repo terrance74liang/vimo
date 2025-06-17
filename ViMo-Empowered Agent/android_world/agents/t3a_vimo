@@ -23,6 +23,43 @@ from android_world.env import interface
 from android_world.env import json_action
 from android_world.env import representation_utils
 
+from android_world.agents.vimo import vimo_sum, vimo_reward, vimo_reward_t2
+import time
+
+import os
+
+from PIL import Image
+import re
+import json
+from typing import Optional, Any, Dict
+import io
+import requests
+import numpy as np
+import concurrent.futures
+import ast
+
+def post_figure_action(image_array, action, url):
+    """Helper function to post a single figure-action pair."""
+    # Convert NumPy array to PNG in memory
+    pil_image = Image.fromarray(image_array)
+    buffer = io.BytesIO()
+    pil_image.save(buffer, format='PNG')
+    buffer.seek(0)
+
+    files = {
+        "file": ("test.png", buffer, "image/png")
+    }
+    data = {
+        "action": action
+    }
+
+    response = requests.post(url, files=files, data=data)
+    returned_image_bytes = io.BytesIO(response.content)
+    returned_image = Image.open(returned_image_bytes)
+    returned_array = np.array(returned_image)
+    
+    return returned_array
+
 PROMPT_PREFIX = (
     'You are an agent who can operate an Android phone on behalf of a user.'
     " Based on user's goal/request, you may\n"
@@ -147,9 +184,11 @@ ACTION_SELECTION_PROMPT_TEMPLATE = (
     ' screen:\n{ui_elements_description}\n'
     + GUIDANCE
     + '{additional_guidelines}'
-    + '\n\nNow output an action from the above list in the correct JSON format,'
-    ' following the reason why you do that. Your answer should look like:\n'
-    'Reason: ...\nAction: {{"action_type":...}}\n\n'
+    + '\n\nNow output {k} different potential actions from the above list in JSON format.'
+    'For each selected action, include:\n'
+    '- A reason explaining why it is a valid or plausible action.\n' 
+    'You must follow this structure exactly:\n'
+    '{{1: {{Reason: ..., Action: {{"action_type":...}}}}, 2: {{Reason: ..., Action: {{"action_type":...}}}}, ..., {k}: {{Reason: ..., Action: {{"action_type":...}}}}}}\n\n'
     'Your Answer:\n'
 )
 
@@ -183,6 +222,63 @@ SUMMARIZATION_PROMPT_TEMPLATE = (
 )
 
 
+def extract_dictionary_from_string(input_string):
+    """
+    Extracts a dictionary from a string containing JSON-like or Python-dict-like content 
+    with potential inconsistencies such as unquoted keys.
+    If an action has type 'scroll' and index is None, 'index' is removed from the action.
+    """
+
+    # Step 1: Detect the dictionary content boundaries
+    dict_start = input_string.find("{")
+    dict_end = input_string.rfind("}")
+    if dict_start == -1 or dict_end == -1:
+        raise ValueError("No valid dictionary-like structure found in the input.")
+
+    dict_str = input_string[dict_start : dict_end + 1]
+
+    # Step 2a: Fix unquoted keys of the form SomeKey: to 'SomeKey':
+    #  - This will only wrap words (letters/numbers/underscores) starting with a letter/underscore
+    #  - We do not wrap purely numeric keys (e.g., 1:), which is already valid in Python
+    #    because {1: ...} is perfectly valid syntax for ast.literal_eval.
+    pattern = r'(?P<key>[a-zA-Z_]\w*):'
+    def replacer(match):
+        return f"'{match.group('key')}':"
+    dict_str = re.sub(pattern, replacer, dict_str)
+
+    # Step 2b: Try parsing using ast.literal_eval
+    try:
+        parsed_dict = ast.literal_eval(dict_str)
+    except (ValueError, SyntaxError) as e:
+        raise ValueError(f"Failed to parse dictionary structure: {e}")
+
+    # Step 3: Validate and normalize the parsed dictionary
+    result = {}
+    for key, value in parsed_dict.items():
+        # Ensure key can be converted to int
+        try:
+            int_key = int(key)
+        except ValueError:
+            raise ValueError(f"Key '{key}' is not an integer.")
+
+        # Ensure the expected structure { "Reason": ..., "Action": {...} }
+        if not isinstance(value, dict) or "Reason" not in value or "Action" not in value:
+            raise ValueError(f"Value for key '{key}' does not match expected structure.")
+
+        reason = str(value["Reason"])
+        action = value["Action"] if isinstance(value["Action"], dict) else {}
+
+        # Apply the special rule: if scroll + None, omit 'index'
+        if action.get("action_type") == "scroll" and action.get("index") is None:
+            action = {"action_type": "scroll"}
+
+        result[int_key] = {
+            "Reason": reason,
+            "Action": action
+        }
+
+    return result
+
 def _generate_ui_elements_description_list_full(
     ui_elements: list[representation_utils.UIElement],
     screen_width_height_px: tuple[int, int],
@@ -208,6 +304,7 @@ def _action_selection_prompt(
     history: list[str],
     ui_elements_description: str,
     additional_guidelines: list[str] | None = None,
+    k=3,
 ) -> str:
   """Generate the prompt for the action selection.
 
@@ -238,6 +335,7 @@ def _action_selection_prompt(
       if ui_elements_description
       else 'Not available',
       additional_guidelines=extra_guidelines,
+      k=k,
   )
 
 
@@ -335,7 +433,7 @@ class T3A(base_agent.EnvironmentInteractingAgent):
         self.additional_guidelines,
     )
     step_data['action_prompt'] = action_prompt
-    action_output, is_safe, raw_response = self.llm.predict(
+    action_output_temp, is_safe, raw_response = self.llm.predict(
         action_prompt,
     )
 
@@ -347,9 +445,60 @@ Action: {{"action_type": "status", "goal_status": "infeasible"}}"""
     if not raw_response:
       raise RuntimeError('Error calling LLM in action selection phase.')
 
-    step_data['action_output'] = action_output
-    step_data['action_raw_response'] = raw_response
 
+    actions_reason = extract_dictionary_from_string(action_output_temp)
+
+    action_sums = {}
+    agent_sum = vimo_sum.T3A(infer.GeminiGcpWrapper('gemini-2.0-flash'))
+    agent_reward = vimo_reward.T3A(infer.GeminiGcpWrapper('gemini-2.0-flash'))
+    agent_reward_t2 = vimo_reward_t2.T3A(infer.GeminiGcpWrapper('gemini-2.0-flash'))
+
+    for act_key in actions_reason.keys():
+      reason = actions_reason[act_key]['Reason']
+      action = actions_reason[act_key]['Action']
+      action_sum = agent_sum.step(goal, reason, action, before_element_list)
+      action_sums[act_key] = action_sum.strip('\n')
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+        futures = [
+            executor.submit(post_figure_action, step_data['raw_screenshot'], action_sums[1]),
+            executor.submit(post_figure_action, step_data['raw_screenshot'], action_sums[2]),
+            executor.submit(post_figure_action, step_data['raw_screenshot'], action_sums[3]),
+        ]
+    results = [future.result() for future in futures]
+    
+    ac_dict = {}
+    for i, arr in enumerate(results, start=1):
+        ac_dict[i] = agent_reward.step(goal, self.history, actions_reason[i]['Action'], actions_reason[i]['Reason'], action_sums[i], before_element_list, before_screenshot, arr)
+    
+    top_confidence_keys = sorted(
+                    ac_dict.keys(),
+                    key=lambda k: ac_dict[k],
+                    reverse=True
+                )
+    
+    action_0 = actions_reason[top_confidence_keys[0]]['Action']
+    act_re_0 = actions_reason[top_confidence_keys[0]]['Reason']
+    sum_0 = action_sums[top_confidence_keys[0]]
+    
+    action_1 = actions_reason[top_confidence_keys[1]]['Action']
+    act_re_1 = actions_reason[top_confidence_keys[1]]['Reason']
+    sum_1 = action_sums[top_confidence_keys[1]]
+    
+    potential_actions = {
+      'action 1': f'Reason: {act_re_0}\nAction: {action_0}', 
+      'action 2': f'Reason: {act_re_1}\nAction: {action_1}'
+    }
+
+    if(sum_0 == sum_1):
+      selected_re = act_re_0
+      selected_act = action_0
+      action_output = f'Reason: {selected_re}\nAction: {selected_act}'
+    else:
+      judge_action, judge_action_re = agent_reward_t2.step(goal, self.history, step_data['raw_screenshot'], before_screenshot, before_element_list, action_0, act_re_0, sum_0, action_1, act_re_1, sum_1)
+
+    action_output = potential_actions[judge_action]
+
+    step_data['action_output'] = action_output
     reason, action = m3a_utils.parse_reason_action_output(action_output)
 
     # If the output is not in the right format, add it to step summary which
