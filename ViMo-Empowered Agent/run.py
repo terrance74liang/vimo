@@ -36,6 +36,7 @@ from android_world.agents import m3a
 from android_world.agents import random_agent
 from android_world.agents import seeact
 from android_world.agents import t3a
+from android_world.agents import t3a_vimo
 from android_world.env import env_launcher
 from android_world.env import interface
 
@@ -169,6 +170,10 @@ def _get_agent(
   elif _AGENT_NAME.value == 't3a_gemini_gcp':
     agent = t3a.T3A(
         env, infer.GeminiGcpWrapper(model_name='gemini-1.5-pro-latest')
+    )
+  elif _AGENT_NAME.value == 't3a_vimo_gemini':
+    agent = t3a.T3A(
+        env, infer.GeminiGcpWrapper(model_name='gemini-2.0-flash')
     )
   # GPT.
   elif _AGENT_NAME.value == 't3a_gpt4':
