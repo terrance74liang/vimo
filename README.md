@@ -33,7 +33,11 @@ python UI_text_prediction.py
    - [Android In The Wild](https://github.com/google-research/google-research/tree/master/android_in_the_wild)
 
 2. Organize the images as follows:
-<pre><code>```text Image folder/ └── epid/ └── image_id.png ```</code></pre>
+```
+Image_Folder/
+    epid/
+        image_id.png
+```
 3. Run `generate_ocr.py` to detect OCR content in the GUI screenshots.
 
 4. Run `check_fix.py` to identify static elements in the UI.
