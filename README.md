@@ -51,5 +51,5 @@ Please refer to the [IP2P project](https://github.com/timothybrooks/instruct-pix
 - [x] Code for  UI text prediction
 - [x] Release the STR dataset process code
 - [x] Release instruction for UI graphic prediction
-- [ ] Release code for agent 
+- [x] Release code for agent 
 
