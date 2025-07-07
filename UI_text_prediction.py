@@ -930,11 +930,10 @@ def generate_text_onestep(original_image,next_layout,action,result_path,client,m
           
 
 if __name__=="__main__":
-    your_geminikey = ''
-    client = genai.Client(api_key=your_geminikey)
-    original_image = './current_GUI.png'
-    next_layout = './next_STR.png'
-    action = 'Open App drawer'
-    output_path = 'result.png'
+    client = genai.Client(api_key=os.environ.get('GEMINI_API_KEY'))
+    original_image = './ep_0_sg_0.png'
+    next_layout = './0_1.png'
+    action = "Open the Zoho Meet app"
+    output_path = 'result_zoho.png'
     generate_text_onestep(original_image,next_layout,action,output_path,client,model_str='gemini')
         
