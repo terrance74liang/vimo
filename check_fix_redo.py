@@ -4,7 +4,7 @@ import json
 from tqdm import tqdm
 from PIL import Image, ImageDraw
 from google import genai
-
+import time
 def encode_image(image_path):
     with open(image_path, 'rb') as image_file:
         return base64.b64encode(image_file.read()).decode('utf-8')
@@ -83,8 +83,6 @@ if __name__=='__main__':
     path = '/media/data/te_liang/android_control_tfrecords/structured'
 
     for episode in tqdm(sorted(os.listdir(path))):
-        if episode != '160_6':
-            continue
 
         ocr_path = os.path.join(path, episode)
         episode_subset = episode.split('_')
@@ -100,9 +98,11 @@ if __name__=='__main__':
             client = genai.Client(api_key=os.getenv('GEMINI_API_KEY'))
 
             results = request_gemini([images,os.path.join(path, episode,  f'og_{episode_subset[1]}_{subset}' + '.png')],client)
+
+            time.sleep(7)
             
             if not results: 
-                continue
+                detect_text_save(os.path.join(path, episode,  f'og_{episode_subset[1]}_{subset}' + '.png'),images,ocr_data)
             else:
                 remove_ids = [int(key) for key in results.keys() if results[key] not in exluded_array]
                 filtered_data = [item for item in ocr_data if item['id'] not in remove_ids]

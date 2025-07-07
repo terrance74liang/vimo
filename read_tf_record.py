@@ -6,7 +6,7 @@ from PIL import Image, ImageDraw
 from pathlib import Path
 import shutil
 import tempfile
-import tqdm
+from tqdm import tqdm
 
 data_path = '../android_control_tfrecords/data'
 subfiles = os.listdir(data_path)
@@ -68,7 +68,8 @@ if __name__ == '__main__':
 
         gzip_dataset = tf.data.TFRecordDataset([data_path + '/' +file],compression_type = 'GZIP')
 
-        for record in tqdm(gzip_dataset.take(10)):
+        for record in iter(gzip_dataset.take(10)):
+
             example = tf.train.Example()
             example.ParseFromString(record.numpy())
 
