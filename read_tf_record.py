@@ -62,6 +62,8 @@ def str_representation(input_path, output_path,json_output, min_width, min_heigh
 
 if __name__ == '__main__':
 
+    seeds = []
+
     for file in subfiles:
         if 'android' not in file:
             continue
@@ -86,8 +88,10 @@ if __name__ == '__main__':
             step_instructions = tf.sparse.to_dense(parsed_example['step_instructions'])
 
             for i in range(len(screenshots) - 1):
+
                 p = Path(output_dir)
                 ep_folder_name = p.joinpath(str(parsed_episode_id) + '_' + str(i))
+                seeds.append([str(parsed_episode_id) + '_' + str(i),[str(i)]])
 
                 if ep_folder_name.exists():
                     shutil.rmtree(ep_folder_name)
@@ -109,6 +113,9 @@ if __name__ == '__main__':
 
                 str_representation(sample1_path_og + png,sample1_path + png,sample1_path + json_txt,30,30)
                 str_representation(sample2_path_og + png,sample2_path + png,sample2_path + json_txt,30,30)
-                
+    
+    
+    with open(Path(output_dir).joinpath('seeds.json'), 'w', encoding='utf-8') as f:
+        json.dump(seeds, f, ensure_ascii=False, indent=2)    
 
 
