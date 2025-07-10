@@ -7,10 +7,7 @@ from pathlib import Path
 import shutil
 import tempfile
 from tqdm import tqdm
-
-data_path = '../android_control_tfrecords/data'
-subfiles = os.listdir(data_path)
-output_dir = '../android_control_tfrecords/structured'
+import argparse
 
 def str_representation(input_path, output_path,json_output, min_width, min_height):
     model_de = TextDetection(model_name="PP-OCRv5_server_det")
@@ -59,18 +56,31 @@ def str_representation(input_path, output_path,json_output, min_width, min_heigh
             json.dump(json_ocr, f, ensure_ascii=False, indent=2)
 
 
+# input is a directory, output is also a directory, episode path is a file and split is the folder you want to name it for eitheer put training or validation or testing
+def run(input_path = '../android_control_tfrecords/data',output_path = '../android_control_tfrecords/structured2',episode_path = None, split = None):
+    print(input_path)
+    print(output_path)
 
-if __name__ == '__main__':
+    data_path = input_path
+    subfiles = os.listdir(data_path)
+    output_dir = str(Path(output_path).joinpath(split))
 
     seeds = []
 
+    with open(Path(episode_path), 'r', encoding='utf-8') as f:
+        ep = json.load( f)   
+        episodes = [item for sublist in ep.values() for item in sublist]
+    
     for file in subfiles:
         if 'android' not in file:
             continue
 
         gzip_dataset = tf.data.TFRecordDataset([data_path + '/' +file],compression_type = 'GZIP')
 
-        for record in iter(gzip_dataset.take(10)):
+        for record in iter(gzip_dataset.take(3)):
+
+            if len(episodes) == 0:
+                break
 
             example = tf.train.Example()
             example.ParseFromString(record.numpy())
@@ -84,6 +94,11 @@ if __name__ == '__main__':
             screenshots = tf.sparse.to_dense(parsed_example['screenshots'])
 
             parsed_episode_id = parsed_example['episode_id'].numpy()[0]
+
+            if parsed_episode_id not in episodes:
+                continue
+            else:
+                episodes.remove(parsed_episode_id)
 
             step_instructions = tf.sparse.to_dense(parsed_example['step_instructions'])
 
@@ -102,8 +117,8 @@ if __name__ == '__main__':
 
                 sample1_path_og = str(ep_folder_name.joinpath(f'og_{i}_0'))
                 sample2_path_og = str(ep_folder_name.joinpath(f'og_{i}_1'))
-                sample1_path = str(ep_folder_name.joinpath(f'{i}_0'))
-                sample2_path = str(ep_folder_name.joinpath(f'{i}_1'))
+                sample1_path = str(ep_folder_name.joinpath(f'p1_{i}_0'))
+                sample2_path = str(ep_folder_name.joinpath(f'p1_{i}_1'))
 
                 png = '.png'
                 json_txt = '.json'
@@ -117,5 +132,30 @@ if __name__ == '__main__':
     
     with open(Path(output_dir).joinpath('seeds.json'), 'w', encoding='utf-8') as f:
         json.dump(seeds, f, ensure_ascii=False, indent=2)    
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument(
+        "-i", "--input_path", required=True,
+        help="Path to input file or directory"
+    )
+    parser.add_argument(
+        "-o", "--output_path", required=True,
+        help="Path to save output"
+    )
+
+    parser.add_argument(
+        "-e", "--episode_path", required=True,
+        help="Path to episodes"
+    )
+    parser.add_argument(
+        "-s", "--split", required=True,
+        help="path to episodes"
+    )
+
+    args = parser.parse_args()
+
+    run(**args.__dict__)
 
 
