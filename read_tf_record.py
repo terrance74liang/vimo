@@ -9,9 +9,9 @@ import tempfile
 from tqdm import tqdm
 import argparse
 
-def str_representation(input_path, output_path,json_output, min_width, min_height):
-    model_de = TextDetection(model_name="PP-OCRv5_server_det")
-    model_re = TextRecognition(model_name="PP-OCRv5_server_rec")
+def str_representation(input_path, output_path,json_output, min_width, min_height, detection_model, recognition_model):
+    model_de = detection_model
+    model_re = recognition_model
     results_de = model_de.predict(input_path, batch_size =1)
     json_ocr = []
     current_id = 0
@@ -55,52 +55,49 @@ def str_representation(input_path, output_path,json_output, min_width, min_heigh
         with open(json_output, 'w', encoding='utf-8') as f:
             json.dump(json_ocr, f, ensure_ascii=False, indent=2)
 
+def _parse_fn(example_proto):
+    feature_description = {
+        'screenshots': tf.io.VarLenFeature(tf.string),
+        'episode_id' : tf.io.FixedLenFeature([1], tf.int64),
+        'step_instructions': tf.io.VarLenFeature(tf.string)
+    }
+    return tf.io.parse_single_example(example_proto, feature_description)
+
+def filter_wrap(allowed_ids):
+    def _filter_fn(example):
+        return tf.reduce_any(tf.equal(example['episode_id'][0], allowed_ids))
+    return _filter_fn
+
 
 # input is a directory, output is also a directory, episode path is a file and split is the folder you want to name it for eitheer put training or validation or testing
 def run(input_path = '../android_control_tfrecords/data',output_path = '../android_control_tfrecords/structured2',episode_path = None, split = None):
-    print(input_path)
-    print(output_path)
 
     data_path = input_path
     subfiles = os.listdir(data_path)
     output_dir = str(Path(output_path).joinpath(split))
 
+    detection = TextDetection(model_name="PP-OCRv5_server_det")
+    recognition = TextRecognition(model_name="PP-OCRv5_server_rec")
+
     seeds = []
 
     with open(Path(episode_path), 'r', encoding='utf-8') as f:
         ep = json.load( f)   
-        episodes = [item for sublist in ep.values() for item in sublist]
+        episodes = tf.constant([int(item) for sublist in ep.values() for item in sublist] + [0,20,60], dtype=tf.int64)
     
-    for file in subfiles:
+    for file in tqdm(subfiles):
         if 'android' not in file:
             continue
 
-        gzip_dataset = tf.data.TFRecordDataset([data_path + '/' +file],compression_type = 'GZIP')
+        gzip_dataset = tf.data.TFRecordDataset([data_path + '/' +file],compression_type = 'GZIP').map(_parse_fn, num_parallel_calls=tf.data.AUTOTUNE).filter(filter_wrap(episodes))
 
-        for record in iter(gzip_dataset.take(3)):
+        for record in iter(gzip_dataset):
 
-            if len(episodes) == 0:
-                break
+            screenshots = tf.sparse.to_dense(record['screenshots'])
 
-            example = tf.train.Example()
-            example.ParseFromString(record.numpy())
+            parsed_episode_id = record['episode_id'].numpy()[0]
 
-            parsed_example = tf.io.parse_single_example(record,{
-                'screenshots': tf.io.VarLenFeature(tf.string),
-                'episode_id' : tf.io.FixedLenFeature([1], tf.int64),
-                'step_instructions': tf.io.VarLenFeature(tf.string)
-            })
-
-            screenshots = tf.sparse.to_dense(parsed_example['screenshots'])
-
-            parsed_episode_id = parsed_example['episode_id'].numpy()[0]
-
-            if parsed_episode_id not in episodes:
-                continue
-            else:
-                episodes.remove(parsed_episode_id)
-
-            step_instructions = tf.sparse.to_dense(parsed_example['step_instructions'])
+            step_instructions = tf.sparse.to_dense(record['step_instructions'])
 
             for i in range(len(screenshots) - 1):
 
@@ -123,13 +120,21 @@ def run(input_path = '../android_control_tfrecords/data',output_path = '../andro
                 png = '.png'
                 json_txt = '.json'
 
-                tf.io.write_file(sample1_path_og + png, screenshots[i])
-                tf.io.write_file(sample2_path_og + png, screenshots[i + 1])
+                if i == 0:
+                    tf.io.write_file(sample1_path_og + png, screenshots[i])
+                    tf.io.write_file(sample2_path_og + png, screenshots[i + 1])
 
-                str_representation(sample1_path_og + png,sample1_path + png,sample1_path + json_txt,30,30)
-                str_representation(sample2_path_og + png,sample2_path + png,sample2_path + json_txt,30,30)
-    
-    
+                    str_representation(sample1_path_og + png,sample1_path + png,sample1_path + json_txt,30,30, detection, recognition)
+                    str_representation(sample2_path_og + png,sample2_path + png,sample2_path + json_txt,30,30, detection, recognition)
+                else:
+                    tf.io.write_file(sample2_path_og + png, screenshots[i + 1])
+                    str_representation(sample2_path_og + png,sample2_path + png,sample2_path + json_txt,30,30, detection, recognition)
+
+                    shutil.copy(p.joinpath(str(parsed_episode_id) + '_' + str(i -1)).joinpath(f'og_{i-1}_1' + png), p.joinpath(str(parsed_episode_id) + '_' + str(i)).joinpath(f'og_{i}_0' + png))
+                    shutil.copy(p.joinpath(str(parsed_episode_id) + '_' + str(i -1)).joinpath(f'p1_{i-1}_1' + png), p.joinpath(str(parsed_episode_id) + '_' + str(i)).joinpath(f'p1_{i}_0' + png))
+                    shutil.copy(p.joinpath(str(parsed_episode_id) + '_' + str(i -1)).joinpath(f'p1_{i-1}_1' + json_txt), p.joinpath(str(parsed_episode_id) + '_' + str(i)).joinpath(f'p1_{i}_0' + json_txt))
+
+
     with open(Path(output_dir).joinpath('seeds.json'), 'w', encoding='utf-8') as f:
         json.dump(seeds, f, ensure_ascii=False, indent=2)    
 
