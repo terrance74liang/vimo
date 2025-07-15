@@ -9,51 +9,53 @@ import tempfile
 from tqdm import tqdm
 import argparse
 
-def str_representation(input_path, output_path,json_output, min_width, min_height, detection_model, recognition_model):
+def str_representation(input_path, output_path, json_output, min_width, min_height, detection_model, recognition_model):
     model_de = detection_model
     model_re = recognition_model
-    results_de = model_de.predict(input_path, batch_size =1)
+    results_de = model_de.predict(input_path, batch_size=1)
     json_ocr = []
     current_id = 0
 
     for res in results_de:
-
         pic = Image.open(input_path).convert("RGBA")
+        draw = ImageDraw.Draw(pic)
 
         for coordinate in res.get('dt_polys'):
+            x0 = min(coordinate[0][0], coordinate[2][0])
+            x1 = max(coordinate[0][0], coordinate[2][0])
+            y0 = min(coordinate[0][1], coordinate[2][1])
+            y1 = max(coordinate[0][1], coordinate[2][1])
 
-            if abs(coordinate[0][0] - coordinate[2][0]) <= min_width or abs(coordinate[0][1] - coordinate[2][1]) <= min_height:
+            if (x1 - x0) <= min_width or (y1 - y0) <= min_height:
                 continue
 
             with tempfile.NamedTemporaryFile(suffix=".png", delete=True) as tmp:
                 current_id += 1
-                cropped = pic.crop((coordinate[3][0],coordinate[1][1],coordinate[1][0],coordinate[3][1]))
+                cropped = pic.crop((x0, y0, x1, y1))
                 cropped.save(tmp, format="PNG")
                 tmp.flush()
-                results_re = model_re.predict(tmp.name, batch_size = 1)
-                json_ocr.append({'id': current_id , 'text': results_re[0]['rec_text'], 'location': list(map(int,[coordinate[0][0],coordinate[0][1],coordinate[2][0],coordinate[2][1]]))})
+                results_re = model_re.predict(tmp.name, batch_size=1)
+                json_ocr.append({
+                    'id': current_id,
+                    'text': results_re[0]['rec_text'],
+                    'location': list(map(int, [x0, y0, x1, y1]))
+                })
 
-            draw = ImageDraw.Draw(pic)
-            draw.rectangle(((coordinate[0][0] -5, coordinate[0][1]-5), (coordinate[2][0]+5, coordinate[2][1]+5)), fill=(255, 255, 255, 255))
-            draw.rectangle(((coordinate[0][0] -5, coordinate[0][1]-5), (coordinate[2][0]+5, coordinate[2][1]+5)), outline = (0, 0, 0, 255),width = 10)
+            draw.rectangle(((x0 - 5, y0 - 5), (x1 + 5, y1 + 5)), fill=(255, 255, 255, 255))
+            draw.rectangle(((x0 - 5, y0 - 5), (x1 + 5, y1 + 5)), outline=(0, 0, 0, 255), width=10)
 
             bbox = draw.textbbox((0, 0), str(current_id))
             text_width = bbox[2] - bbox[0]
             text_height = bbox[3] - bbox[1]
+            text_x = x0 + ((x1 - x0) - text_width) / 2
+            text_y = y0 + ((y1 - y0) - text_height) / 2
+            draw.text(xy=(text_x, text_y), text=str(current_id), fill=(255, 0, 0, 255))
 
-            box_width = coordinate[2][0] - coordinate[0][0]
-            box_height = coordinate[2][1] - coordinate[0][1]
-            text_x = coordinate[0][0] + (box_width - text_width) / 2
-            text_y = coordinate[0][1] + (box_height - text_height) / 2
-
-            draw.text(xy=(text_x,text_y), text=str(current_id), fill = (255, 0, 0, 255), font_size=20)
-        
-        pic = pic.convert("RGB")
-
-        pic.save(fp=output_path)
+        pic.convert("RGB").save(fp=output_path)
 
         with open(json_output, 'w', encoding='utf-8') as f:
             json.dump(json_ocr, f, ensure_ascii=False, indent=2)
+
 
 def _parse_fn(example_proto):
     feature_description = {
@@ -91,7 +93,7 @@ def run(input_path = '../android_control_tfrecords/data',output_path = '../andro
 
         gzip_dataset = tf.data.TFRecordDataset([data_path + '/' +file],compression_type = 'GZIP').map(_parse_fn, num_parallel_calls=tf.data.AUTOTUNE).filter(filter_wrap(episodes))
 
-        for record in iter(gzip_dataset):
+        for record in iter(gzip_dataset.take(2)):
 
             screenshots = tf.sparse.to_dense(record['screenshots'])
 
