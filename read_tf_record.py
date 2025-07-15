@@ -85,7 +85,7 @@ def run(input_path = '../android_control_tfrecords/data',output_path = '../andro
 
     with open(Path(episode_path), 'r', encoding='utf-8') as f:
         ep = json.load( f)   
-        episodes = tf.constant([int(item) for sublist in ep.values() for item in sublist] + [0,20,60], dtype=tf.int64)
+        episodes = tf.constant([int(item) for sublist in ep.values() for item in sublist], dtype=tf.int64)
     
     for file in tqdm(subfiles):
         if 'android' not in file:
@@ -93,7 +93,7 @@ def run(input_path = '../android_control_tfrecords/data',output_path = '../andro
 
         gzip_dataset = tf.data.TFRecordDataset([data_path + '/' +file],compression_type = 'GZIP').map(_parse_fn, num_parallel_calls=tf.data.AUTOTUNE).filter(filter_wrap(episodes))
 
-        for record in iter(gzip_dataset.take(2)):
+        for record in iter(gzip_dataset):
 
             screenshots = tf.sparse.to_dense(record['screenshots'])
 
