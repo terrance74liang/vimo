@@ -4,7 +4,10 @@ import json
 from tqdm import tqdm
 from PIL import Image, ImageDraw
 from google import genai
+import shutil
+import argparse
 import time
+
 def encode_image(image_path):
     with open(image_path, 'rb') as image_file:
         return base64.b64encode(image_file.read()).decode('utf-8')
@@ -41,12 +44,10 @@ Ensure there is no additional formatting, code blocks or placeholders in your re
     model="gemini-2.0-flash",
     contents=[image_input, prompt])
     output =   response.text
-    # print(output)
     try:
         output = json.loads(output)
     except json.JSONDecodeError:
         output = output.replace("```json", "").replace("```", "")
-        # print(output)
         output = json.loads(output)
     return output
 
@@ -79,34 +80,63 @@ def reform_ocr(ocr):
     converted_data = [(item['id'], item['text'], item['Location']) for item in ocr]
     return converted_data
 
-if __name__=='__main__':
-    path = '/media/data/te_liang/android_control_tfrecords/structured'
+def run(input_path = 'vimo_processed_data', split = None):
+    path = os.path.join(input_path, split)
 
     for episode in tqdm(sorted(os.listdir(path))):
 
-        ocr_path = os.path.join(path, episode)
         episode_subset = episode.split('_')
 
-        for subset in range(2):
-            with open(os.path.join(path, episode, episode_subset[1] + f'_{subset}' + '.json'), 'r') as f:
+        if int(episode_subset[1]) == 0:
+            iterations = [0,1]
+        else:
+            iterations = [1]
+
+        time.sleep(10)
+
+        for subset in iterations:
+            with open(os.path.join(path, episode,f'p1_{episode_subset[1]}_{subset}.json'), 'r') as f:
                 ocr_data = json.load(f) 
             
-            images = os.path.join(path, episode, episode_subset[1] + f'_{subset}' + '.png')
+            images = os.path.join(path, episode, f'p1_{episode_subset[1]}_{subset}.png')
 
             exluded_array = ['Calendar other','Timepicker','Clock other']
 
             client = genai.Client(api_key=os.getenv('GEMINI_API_KEY'))
 
-            results = request_gemini([images,os.path.join(path, episode,  f'og_{episode_subset[1]}_{subset}' + '.png')],client)
+            results = request_gemini([images,os.path.join(path, episode,  f'og_{episode_subset[1]}_{subset}.png')],client)
 
-            time.sleep(7)
+            final = os.path.join(path, episode, f'{episode_subset[1]}_{subset}.png')
             
             if not results: 
-                detect_text_save(os.path.join(path, episode,  f'og_{episode_subset[1]}_{subset}' + '.png'),images,ocr_data)
+                detect_text_save(os.path.join(path, episode,  f'og_{episode_subset[1]}_{subset}.png'),final,ocr_data)
             else:
                 remove_ids = [int(key) for key in results.keys() if results[key] not in exluded_array]
                 filtered_data = [item for item in ocr_data if item['id'] not in remove_ids]
-                detect_text_save(os.path.join(path, episode,  f'og_{episode_subset[1]}_{subset}' + '.png'),images,filtered_data)
+                detect_text_save(os.path.join(path, episode,  f'og_{episode_subset[1]}_{subset}.png'),final,filtered_data)
+            
+            if len(iterations) == 1:
+                path1 = os.path.join(path,str(episode_subset[0]) + '_' + str(int(episode_subset[1]) -1), f'{int(episode_subset[1])-1}_1.png')
+                path2 = os.path.join(path,str(episode_subset[0]) + '_' + str(episode_subset[1]), f'{episode_subset[1]}_0.png')
+                shutil.copy(path1, path2)
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument(
+        "-i", "--input_path", required=False,
+        help="Path to input file or directory"
+    )
+
+    parser.add_argument(
+        "-s", "--split", required=True,
+        help="path to episodes"
+    )
+
+    args = parser.parse_args()
+
+    run(**args.__dict__)
+        
 
 
 

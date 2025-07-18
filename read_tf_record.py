@@ -72,7 +72,7 @@ def filter_wrap(allowed_ids):
 
 
 # input is a directory, output is also a directory, episode path is a file and split is the folder you want to name it for eitheer put training or validation or testing
-def run(input_path = '../android_control_tfrecords/data',output_path = '../android_control_tfrecords/structured2',episode_path = None, split = None):
+def run(input_path = '../android_control',output_path = '../vimo_processed_data',episode_path = 'data/control_train.json', split = None):
 
     data_path = input_path
     subfiles = os.listdir(data_path)
@@ -144,16 +144,16 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
-        "-i", "--input_path", required=True,
+        "-i", "--input_path", required=False,
         help="Path to input file or directory"
     )
     parser.add_argument(
-        "-o", "--output_path", required=True,
+        "-o", "--output_path", required=False,
         help="Path to save output"
     )
 
     parser.add_argument(
-        "-e", "--episode_path", required=True,
+        "-e", "--episode_path", required=False,
         help="Path to episodes"
     )
     parser.add_argument(
