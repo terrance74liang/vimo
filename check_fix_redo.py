@@ -85,6 +85,9 @@ def run(input_path = 'vimo_processed_data', split = None):
 
     for episode in tqdm(sorted(os.listdir(path))):
 
+        if '.json' in episode:
+            continue
+
         episode_subset = episode.split('_')
 
         if int(episode_subset[1]) == 0:
