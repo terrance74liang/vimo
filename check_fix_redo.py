@@ -80,8 +80,11 @@ def reform_ocr(ocr):
     converted_data = [(item['id'], item['text'], item['Location']) for item in ocr]
     return converted_data
 
-def run(input_path = 'vimo_processed_data', split = None):
+def run(input_path = 'vimo_processed_data', split = None, start = None):
+    window_start_time = time.time()
+    rpm = 0
     path = os.path.join(input_path, split)
+    client = genai.Client(api_key=os.getenv('GEMINI_PAID'))
 
     for episode in tqdm(sorted(os.listdir(path))):
 
@@ -95,9 +98,14 @@ def run(input_path = 'vimo_processed_data', split = None):
         else:
             iterations = [1]
 
-        time.sleep(10)
-
         for subset in iterations:
+            final = os.path.join(path, episode, f'{episode_subset[1]}_{subset}.png')
+
+            if os.path.exists(final):
+                continue
+
+            print(episode)
+
             with open(os.path.join(path, episode,f'p1_{episode_subset[1]}_{subset}.json'), 'r') as f:
                 ocr_data = json.load(f) 
             
@@ -105,11 +113,24 @@ def run(input_path = 'vimo_processed_data', split = None):
 
             exluded_array = ['Calendar other','Timepicker','Clock other']
 
-            client = genai.Client(api_key=os.getenv('GEMINI_API_KEY'))
+            now = time.time()
+
+            # Reset RPM if more than 60 seconds have passed
+            if now - window_start_time > 60:
+                rpm = 0
+                window_start_time = now
+
+            # If RPM limit exceeded, wait until 60 seconds are up
+            if rpm >= 1995:
+                wait_time = 60 - (now - window_start_time)
+                print(f"Sleeping {wait_time:.2f} seconds to respect rate limit.")
+                time.sleep(wait_time)
+                rpm = 0
+                window_start_time = time.time()
 
             results = request_gemini([images,os.path.join(path, episode,  f'og_{episode_subset[1]}_{subset}.png')],client)
 
-            final = os.path.join(path, episode, f'{episode_subset[1]}_{subset}.png')
+            rpm += 1
             
             if not results: 
                 detect_text_save(os.path.join(path, episode,  f'og_{episode_subset[1]}_{subset}.png'),final,ocr_data)
@@ -133,6 +154,11 @@ if __name__ == '__main__':
 
     parser.add_argument(
         "-s", "--split", required=True,
+        help="path to episodes"
+    )
+
+    parser.add_argument(
+        "-d", "--start", required=False,
         help="path to episodes"
     )
 
