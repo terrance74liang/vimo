@@ -135,7 +135,8 @@ def run(input_path = 'vimo_processed_data', split = None, start = None):
             if not results: 
                 detect_text_save(os.path.join(path, episode,  f'og_{episode_subset[1]}_{subset}.png'),final,ocr_data)
             else:
-                remove_ids = [int(key) for key in results.keys() if results[key] not in exluded_array]
+                # remove_ids = [int(key) for key in results.keys() if results[key] not in exluded_array]
+                remove_ids = [int(key) for key, val in results.items() if key.isdigit() and val not in exluded_array]
                 filtered_data = [item for item in ocr_data if item['id'] not in remove_ids]
                 detect_text_save(os.path.join(path, episode,  f'og_{episode_subset[1]}_{subset}.png'),final,filtered_data)
             
