@@ -7,6 +7,10 @@ from google import genai
 import shutil
 import argparse
 import time
+import re
+
+def natural_key(s):
+    return [int(text) if text.isdigit() else text for text in re.split(r'(\d+)', s)]
 
 def encode_image(image_path):
     with open(image_path, 'rb') as image_file:
@@ -86,7 +90,7 @@ def run(input_path = 'vimo_processed_data', split = None, start = None):
     path = os.path.join(input_path, split)
     client = genai.Client(api_key=os.getenv('GEMINI_PAID'))
 
-    for episode in tqdm(sorted(os.listdir(path))):
+    for episode in tqdm(sorted(os.listdir(path), key=natural_key)):
 
         if '.json' in episode:
             continue
