@@ -142,7 +142,7 @@ def run(input_path = '../android_control',output_path = '../vimo_processed_data'
     with open(mask_path,'r') as f:
         aitw_dic = json.load(f)
         
-    for file in subfiles:
+    for file in tqdm(subfiles):
         # if 'general-00234-of-00321' not in file:
         #     continue
         gzip_dataset = tf.data.TFRecordDataset(
